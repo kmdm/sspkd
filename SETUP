@@ -1,0 +1,74 @@
+SSPKD Setup Guide
+=================
+
+This set up guide will describe how to set up the following scenario, from 
+which you can apply to your requirements.
+
+Prequisites
+-----------
+
+ * A gpg keypair with the public key on all SSPKD hosts (~/.gnupg/).
+   - (client: ) $ gpg --armor --export KEYID/FINGERPRINT > mygpg.pubkey
+   - (client: ) $ scp mygpg.pubkey $USER@sspkd-server.tld:
+   - (server: ) $ gpg --import mygpg.pubkey
+
+Master client
+-------------
+
+In this example this is the machine with the GPG private key 
+(e.g. your workstation) from which you will manage the central 
+authorized_keys file.
+
+1. Create a ssh keypair for sspkd to communicate with the central server
+ - $ ssh-keygen -t rsa -f $HOME/.sspkd.pushkey
+
+2. Create the SSPKD configuration file
+ - $ sspkd-setup -k user@sspkd-server.tld -V GPGFINGERPRINT -S GPGFINGERPRINT \
+                 -K $HOME/.sspkd.pushkey 
+
+3. Copy the SSH public key to the central server
+ - $ scp $HOME/.sspkd.pushkey.pub user@sspkd-server.tld:.sspkd.pubkey
+
+Central server
+--------------
+
+In this example this is the machine that will store the master authorized_keys
+file.
+
+1. Create the ssh keypair for sspkd to push the keys to its child servers
+ - $ ssh-keygen -t rsa -f $HOME/.sspkd.pushkey
+
+2. Create the SSPKD configuration file and install the SSPKD public key
+ - $ sspkd-setup -V GPGFINGERPRINT -R $HOME/.sspkd.pubkey \
+                 -a $HOME/.ssh/authorized_keys -sf $HOME/.sspkd.db -I \
+                 -p user@sspkd-child.tld
+
+3. Copy the SSH public key to the child server
+ - $ scp $HOME/.sspkd.pushkey.pub user@sspkd-child.tld:.sspkd.pubkey
+
+A server
+--------
+
+In this example this is another server that requires the updated authorized_keys
+file.
+
+1. Create the SSPKD configuration file and install the SSPKD public key
+ - $ sspkd-setup -V GPGFINGERPRINT -R $HOME/.sspkd.pubkey \
+                 -a $HOME/.ssh/authorized_keys -sf $HOME/.sspkd.db -I
+
+Usage
+-----
+
+Once configured, from your master client, you should be able to run the
+following to push your initial authorized_keys
+
+$ sspkd-push new_authorized_keys_file
+
+Then to update it, the following sequence
+
+$ sspkd-fetch currentkeys
+$ vim currentkeys
+$ sspkd-push currentkeys
+
+Each sspkd-push should update the keys on both the central server and the 
+child server. You can ofcourse expand this set up to cover all of your hosts.

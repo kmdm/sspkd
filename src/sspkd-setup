@@ -1,0 +1,186 @@
+#!/usr/bin/env python
+#
+# This file is part of sspkd.
+#
+# sspkd is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# sspkd is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with sspkd.  If not, see <http://www.gnu.org/licenses/>.
+#
+import ConfigParser as configparser
+import getopt
+import os
+import shutil
+import sys
+
+import pyme.core
+import pyme.pygpgme
+    
+from sspkd.conf import DEFAULT_CONFIG_FILE as CONFIG_FILE
+
+# Default configuration
+INSTALL_PATH=os.path.realpath(os.path.dirname(sys.argv[0]))
+KEYSERVER=None
+PUSHKEY=None
+SIGNKEY=None
+VERIFYKEY=None
+KEYSFILE=None
+PUBKEY=None
+INSTALL_PUBKEY=None
+SERVER_MODE=False
+STORE_ONLY=False
+DBFILE=None
+PUSHTO=None
+
+def usage():
+    print>>sys.stderr, 'Usage: %s <options> [<recv-key> <push-key>]\n' %\
+                       sys.argv[0]
+    print>>sys.stderr, 'client options:-'
+    print>>sys.stderr, '--install-path, -i INSTALLPATH\t\tDirectory where '\
+                       'binaries are installed'
+    print>>sys.stderr, '--key-server, -k user@keyserver.tld\t'\
+                       'Keyserver to push keys to'
+    print>>sys.stderr, '--push-key, -K KEYFILE\t\t\t'\
+                       'SSH private key for pushing keys'
+    print>>sys.stderr, '--sign-key, -S FINGERPRINT\t\t'\
+                       'GPG fingerprint of signing key'
+    print>>sys.stderr, '--verify-key, -V FINGERPRINT\t\t'\
+                       'GPG fingerprint to verify keys'
+    print>>sys.stderr, '--authorized-keys, -a FILENAME\t\tAuthorized keys file'
+    print>>sys.stderr, '--receive-key, -R SSHPUBKEYFILE\t\t'\
+                       'SSH public key for receiving keys'
+    print>>sys.stderr, '--install-pubkey, -I\t\t\tInstall SSPKD public key' 
+    print
+    print 'server options:-'
+    print>>sys.stderr, '--server, -s\t\t\t\tEnable server mode'
+    print>>sys.stderr, '--store-only, -o\t\t\tOnly store keys, do not use them'
+    print>>sys.stderr, '--store-file, -f FILENAME\t\tStore keys file' 
+    print>>sys.stderr, '--push-to, -p user@host.tld\t\t'\
+                       'Hosts to push received keys to'
+    sys.exit(2)
+
+def parse_options():
+    global INSTALL_PATH, KEYSERVER, PUSHKEY, SIGNKEY, VERIFYKEY, KEYSFILE
+    global PUBKEY, INSTALL_PUBKEY, SERVER_MODE, STORE_ONLY, DBFILE, PUSHTO
+    
+    optstring = 'i:k:K:S:V:a:R:Isof:p:'
+    longopts = [
+        'install-path=', 'key-server=', 'push-key=', 'sign-key=', 'verify-key=',
+        'authorized-keys=', 'receive-key=', 'install-pubkey', 'server', 
+        'store-only', 'store-file=', 'push-to'
+    ]
+
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], optstring, longopts)
+    except getopt.GetoptError, err: 
+        print str(err)
+        usage()
+
+    for o, a in opts:
+        if o in ('-i', '--install-path'):
+            INSTALL_PATH = a
+        elif o in ('-k', '--key-server'):
+            KEYSERVER = a
+        elif o in ('-K', '--push-key'):
+            PUSHKEY = a
+        elif o in ('-S', '--sign-key'):
+            SIGNKEY = a
+        elif o in ('-V', '--verify-key'):
+            VERIFYKEY = a
+        elif o in ('-a', '--authorized-keys'):
+            KEYSFILE = a
+        elif o in ('-R', '--receive-key'):
+            PUBKEY = a
+        elif o in ('-I', '--install-pubkey'):
+            INSTALL_PUBKEY = True
+        elif o in ('-s', '--server'):
+            SERVER_MODE = True
+        elif o in ('-o', '--store-only'):
+            STORE_ONLY = True
+        elif o in ('-f', '--store-file'):
+            DBFILE = a
+        elif o in ('-p', '--push-to'):
+            PUSHTO = a
+
+    args.insert(0, sys.argv[0]) 
+    sys.argv = args
+
+def error(msg):
+    print>>sys.stderr, "error: %s" % msg
+    usage()
+
+def check_options():
+    if not(os.path.exists(INSTALL_PATH)):
+        error("Invalid install path: %s" % INSTALL_PATH)
+    elif KEYSERVER is None:
+        error("Key server not specified")
+    elif (PUSHKEY is None) ^ (SIGNKEY is None):
+        error("Must have both --push-key and --sign-key or neither")
+    elif VERIFYKEY is None:
+        error("GPG verify key fingerprint not specified")
+    elif KEYSFILE is None:
+        error("SSH authorized keys file not specified")
+    elif PUBKEY is None and INSTALL_PUBKEY is True:
+        error("Cannot install SSH public key with no public key specified")
+    elif SERVER_MODE is False:
+        if STORE_ONLY is True:
+            error("Cannot set --store-only without --server mode enabled")
+        elif DBFILE is not None:
+            error("Cannot set --store-file without --server mode enabled")
+        elif PUSHTO is not None:
+            error("Cannot set --push-to without --server mode enabled")
+    elif SERVER_MODE is True and DBFILE is None:
+        error("Must provide --store-file if --server mode enabled")
+
+    if len(sys.argv) > 1 and len(sys.argv) < 3:
+        error("Must have both recv-key and push-key args if providing either")
+
+def save_options():
+    cp = configparser.SafeConfigParser()
+    cp.add_section('server')
+    cp.add_section('client')
+    
+    cp.set('client', 'install path', INSTALL_PATH)
+    cp.set('client', 'key server', KEYSERVER)
+    cp.set('client', 'push ssh key', PUSHKEY if PUSHKEY else "")
+    cp.set('client', 'sign key', SIGNKEY if SIGNKEY else "")
+    cp.set('client', 'verify keys', VERIFYKEY)
+    cp.set('client', 'authorized keys file', KEYSFILE)
+
+    cp.set('client', 'receive ssh key', PUBKEY if PUBKEY else "")
+
+    cp.set('server', 'enabled', "yes" if SERVER_MODE else "no")
+    cp.set('server', 'store only', "yes" if STORE_ONLY else "no")
+    cp.set('server', 'db file', DBFILE if DBFILE else "")
+    cp.set('server', 'push to', PUSHTO if PUSHTO else "")
+
+    if len(sys.argv) > 2:
+        shutil.copyfile(sys.argv[1], PUBKEY)
+        shutil.copyfile(sys.argv[2], PUSHKEY)
+
+    with open(CONFIG_FILE, "w") as f:
+        cp.write(f)
+
+    if INSTALL_PUBKEY:
+        from sspkd.util import SspkdUtil
+        formatted_key = SspkdUtil().get_pubkey()
+
+        with open(KEYSFILE, "a") as f:
+            f.write(formatted_key)
+            
+def main():
+    parse_options()
+    check_options()
+    save_options()
+
+if __name__ == "__main__":
+    main()
+

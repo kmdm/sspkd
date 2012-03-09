@@ -1,0 +1,23 @@
+SSPKD - Secure SSH Public Key Distribution
+==========================================
+
+***************************************************************************
+* PLEASE NOTE: This software is is currently an ALPHA release which means *
+*              it most likely contains bugs either in the software itself *
+*              or in the documentation.                                   *
+*                                                                         *
+*              Please report (or generate pull requests) for any issues   *
+*              that you find. Thank you.                                  *
+***************************************************************************
+
+SSPKD is a system to securely distribute your SSH public keys to multiple
+hosts. 
+
+Security is achieved through the use of your GPG key to sign authorized_keys
+file updates which are verified on each recipient machine before an update 
+to the authorized_keys file takes place.
+
+In the event an invalid signature is presented then the update is not
+performed, so if your 'central' sspkd server was compromised then an 
+attacker would be unable to simply add their sshkey and push it onto all
+your other hosts.
