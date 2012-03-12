@@ -15,7 +15,6 @@ class SspkdPull(object):
             with open(self.cf.server.database, "r") as f:
                 return f.read()
 
-        # FIXME: Assumes server installpath == client installpath
         cmdline = [ 
             'ssh', '-o IdentityFile=%s' % self.cf.client.pushkey, 
             '-o IdentitiesOnly=yes',

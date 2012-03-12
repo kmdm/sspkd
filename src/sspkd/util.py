@@ -36,7 +36,7 @@ class SspkdUtil(object):
         ctx = pyme.core.Context()
         ctx.op_verify(c, None, p)
         
-        # FIXME: We're only expect one signature, is this sufficient? 
+        # FIXME: We only expect one signature, is this sufficient?
         sig = ctx.op_verify_result().signatures[0]
         
         if sig.summary & pyme.pygpgme.GPGME_SIGSUM_GREEN == 0:
@@ -59,17 +59,21 @@ class SspkdUtil(object):
         return p.read()
     
     def get_pubkey(self):
-        pubkey = ""
+        pubkeys = []
 
         if self.cf.client.recvkey:
-            pubkey = 'command="%s $SSH_ORIGINAL_COMMAND" ' % (
+            prefix = 'command="%s $SSH_ORIGINAL_COMMAND"' % (
                 os.path.join(self.cf.client.installpath, 'sspkd-shell'),
             )
 
+            # NOTE: We are not expecting a massive file here so no need for
+            #       fileinput
             with open(self.cf.client.recvkey, "r") as f:
-                pubkey += f.read()
-        
-        return pubkey
+                pubkeys = [
+                    '%s %s' % (prefix, sshkey) for sshkey in f.readlines()
+                ]
+
+        return '\n'.join(pubkeys)
 
     def install_keys(self, sshkeys):
         with open(self.cf.client.keysfile, "w") as f:
